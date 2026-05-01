@@ -9,6 +9,8 @@ const stripe = new Stripe(
   ""
 );
 
+const endpointSecret = '';
+
 const app = express();
 
 app.use(
@@ -17,30 +19,48 @@ app.use(
   })
 );
 
+app.post(
+  "/hello-world",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    let event;
+    const signature = req.headers["stripe-signature"];
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        signature,
+        endpointSecret
+      );
+    } catch (err) {
+      console.log(`⚠️ Webhook signature verification failed.`, err.message);
+      return res.sendStatus(400);
+    }
+
+    const checkoutSession = event.data.object;
+
+    console.log(req.headers);
+
+    if (checkoutSession.payment_status === "paid") {
+      const storedCheckoutSession = checkoutSessions.find(
+        ({ sessionId }) => sessionId === checkoutSession.id
+      );
+
+      storedCheckoutSession.paymentStatus = "paid";
+      storedCheckoutSession.updatedByWebhook = true;
+      await writeFile(
+        "./checkout-session.json",
+        JSON.stringify(checkoutSessions, null, 2)
+      );
+    }
+
+    res.json({ message: "Received Data!" });
+  }
+);
+
 app.use(express.json());
 
 app.get("/", (req, res) => {
   res.json(courses);
-});
-
-app.post("/hello-world", async (req, res) => {
-  const checkoutSession = req.body.data.object;
-  console.log(checkoutSession);
-
-  if (checkoutSession.payment_status === "paid") {
-    const storedCheckoutSession = checkoutSessions.find(
-      ({ sessionId }) => sessionId === checkoutSession.id
-    );
-
-    storedCheckoutSession.paymentStatus = "paid";
-    storedCheckoutSession.updatedByWebhook = true;
-    await writeFile(
-      "./checkout-session.json",
-      JSON.stringify(checkoutSessions, null, 2)
-    );
-  }
-
-  res.json({ message: "Received Data!" });
 });
 
 app.post("/create-checkout-session", async (req, res) => {
